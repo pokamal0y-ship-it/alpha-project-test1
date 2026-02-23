@@ -86,7 +86,7 @@ def analyze_alpha_post(raw_text: str) -> dict:
     """Extract project, action, investors from raw text using Gemini 1.5 Flash."""
     import google.generativeai as genai
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("AIzaSyAlx0FyhyDLdYnBq1_KpWt39bsm9VAaBqI")
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is required.")
 
@@ -145,8 +145,8 @@ def calculate_score(extracted_json: dict) -> tuple[int, str]:
 def _get_bot_and_chat_id():
     from aiogram import Bot
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("CHAT_ID")
+    token = os.getenv("8578356246:AAE73Le-L19a1v_AIcEtTHG4dGMTbI7Kfaw")
+    chat_id = os.getenv("520066708")
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required.")
     if not chat_id:
