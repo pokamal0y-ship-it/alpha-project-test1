@@ -223,6 +223,10 @@ def _get_bot_and_chat_id():
     return Bot(token=token), chat_id
 
 
+def _telegram_preview_only() -> bool:
+    return os.getenv("TELEGRAM_PREVIEW_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _project_exists(project_name: str) -> bool:
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -273,20 +277,30 @@ async def process_and_notify(project_data: dict) -> None:
         "🔗 *Check source for details.*"
     )
 
-    bot, chat_id = _get_bot_and_chat_id()
-    if bot is None or chat_id is None:
-        print("[WARN] TELEGRAM_BOT_TOKEN/CHAT_ID not set. Preview only (no message sent):")
+    if _telegram_preview_only():
+        print("[WARN] TELEGRAM_PREVIEW_ONLY enabled. Preview only (no message sent):")
         print(message)
         _insert_project(name, score)
         return
 
     try:
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        bot, chat_id = _get_bot_and_chat_id()
+        if bot is None or chat_id is None:
+            print("[WARN] TELEGRAM_BOT_TOKEN/CHAT_ID not set. Preview only (no message sent):")
+            print(message)
+            _insert_project(name, score)
+            return
+
+        try:
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        except Exception as exc:
+            print(f"[WARN] Telegram send failed ({exc}). Falling back to preview mode:")
+            print(message)
+        finally:
+            await bot.session.close()
     except Exception as exc:
-        print(f"[WARN] Telegram send failed ({exc}). Falling back to preview mode:")
+        print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
         print(message)
-    finally:
-        await bot.session.close()
 
     _insert_project(name, score)
 
