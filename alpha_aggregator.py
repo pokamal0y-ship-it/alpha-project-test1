@@ -34,6 +34,12 @@ VC_TIERS = {
 }
 
 DB_PATH = "alpha_hunter.db"
+DEFAULT_MODEL_CANDIDATES = [
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
 
 
 def init_db() -> None:
@@ -82,25 +88,38 @@ def _coerce_extraction(payload: dict) -> dict:
     }
 
 
-def analyze_alpha_post(raw_text: str) -> dict:
-    """Extract project, action, investors from raw text using Gemini 1.5 Flash."""
-    import google.generativeai as genai
+def _extract_json_text(model_text: str) -> str:
+    cleaned = model_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is required.")
+    # Rescue JSON when model wraps it with extra words
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end >= start:
+        cleaned = cleaned[start : end + 1]
 
-    genai.configure(api_key=api_key)
+    return cleaned
 
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=(
-            "You are a crypto data extractor. Extract the Project Name, "
-            "a 1-sentence description of the required action, and a list of Venture Capital "
-            "investors mentioned. Output ONLY in valid JSON format."
-        ),
+
+def _gemini_models_to_try() -> list[str]:
+    forced = os.getenv("GEMINI_MODEL", "").strip()
+    if forced:
+        return [forced]
+    return DEFAULT_MODEL_CANDIDATES
+
+
+def _analyze_with_google_genai(raw_text: str, api_key: str) -> dict:
+    from google import genai
+    from google.genai import types
+
+    system_instruction = (
+        "You are a crypto data extractor. Extract the Project Name, "
+        "a 1-sentence description of the required action, and a list of Venture Capital "
+        "investors mentioned. Output ONLY in valid JSON format."
     )
-
     prompt = (
         "Extract from the following raw post and return valid JSON with exactly these keys: "
         '{"project": str, "action": str, "investors": list}. '
@@ -108,16 +127,67 @@ def analyze_alpha_post(raw_text: str) -> dict:
         f"RAW_POST:\n{raw_text}"
     )
 
-    response = model.generate_content(prompt)
-    text = (response.text or "").strip()
+    client = genai.Client(api_key=api_key)
+    last_error = None
+    for model_name in _gemini_models_to_try():
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=system_instruction),
+            )
+            text = getattr(response, "text", "") or ""
+            parsed = json.loads(_extract_json_text(text))
+            return _coerce_extraction(parsed)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
 
-    if text.startswith("```"):
-        text = text.strip("`").strip()
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
+    raise RuntimeError(f"All Gemini model attempts failed: {last_error}")
 
-    parsed = json.loads(text)
-    return _coerce_extraction(parsed)
+
+def _analyze_with_google_generativeai(raw_text: str, api_key: str) -> dict:
+    import google.generativeai as genai
+
+    system_instruction = (
+        "You are a crypto data extractor. Extract the Project Name, "
+        "a 1-sentence description of the required action, and a list of Venture Capital "
+        "investors mentioned. Output ONLY in valid JSON format."
+    )
+    prompt = (
+        "Extract from the following raw post and return valid JSON with exactly these keys: "
+        '{"project": str, "action": str, "investors": list}. '
+        "Do not include markdown or extra commentary.\n\n"
+        f"RAW_POST:\n{raw_text}"
+    )
+
+    genai.configure(api_key=api_key)
+
+    last_error = None
+    for model_name in _gemini_models_to_try():
+        try:
+            model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
+            response = model.generate_content(prompt)
+            text = getattr(response, "text", "") or ""
+            parsed = json.loads(_extract_json_text(text))
+            return _coerce_extraction(parsed)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+
+    raise RuntimeError(f"All Gemini model attempts failed: {last_error}")
+
+
+def analyze_alpha_post(raw_text: str) -> dict:
+    """Extract project, action, investors from raw text using Gemini."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable is required.")
+
+    try:
+        return _analyze_with_google_genai(raw_text, api_key)
+    except ModuleNotFoundError:
+        return _analyze_with_google_generativeai(raw_text, api_key)
 
 
 def calculate_score(extracted_json: dict) -> tuple[int, str]:
