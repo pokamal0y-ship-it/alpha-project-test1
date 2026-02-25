@@ -13,6 +13,12 @@ TARGET_ACCOUNTS = [
     "milesjennings",
 ]
 
+NITTER_INSTANCES = [
+    "https://nitter.net",
+    "https://nitter.poast.org",
+    "https://nitter.privacydev.net",
+]
+
 
 def _parse_rss(url: str):
     import feedparser
@@ -21,6 +27,34 @@ def _parse_rss(url: str):
 
 
 def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
+    """Fetch and normalize the latest 5 tweets from available Nitter RSS feeds."""
+    errors: list[str] = []
+
+    for instance in NITTER_INSTANCES:
+        rss_url = f"{instance}/{account}/rss"
+        feed = _parse_rss(rss_url)
+
+        if getattr(feed, "bozo", 0):
+            errors.append(f"{instance}: {getattr(feed, 'bozo_exception', 'unknown parse error')}")
+            continue
+
+        if not getattr(feed, "entries", None):
+            errors.append(f"{instance}: empty feed entries")
+            continue
+
+        tweets: list[dict[str, Any]] = []
+        for entry in feed.entries[:5]:
+            tweets.append(
+                {
+                    "link": getattr(entry, "link", ""),
+                    "title": getattr(entry, "title", ""),
+                    "published": getattr(entry, "published", ""),
+                    "source_instance": instance,
+                }
+            )
+        return tweets
+
+    raise RuntimeError(f"All Nitter instances failed for @{account}: {' | '.join(errors)}")
     """Fetch and normalize the latest 5 tweets from a public Nitter RSS feed."""
     rss_url = f"https://nitter.net/{account}/rss"
     feed = _parse_rss(rss_url)
@@ -72,6 +106,7 @@ async def scouring_engine() -> None:
                     "score": score,
                     "source": tweet.get("link", ""),
                     "published": tweet.get("published", ""),
+                    "source_instance": tweet.get("source_instance", ""),
                 }
 
                 try:
