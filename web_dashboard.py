@@ -71,6 +71,12 @@ def get_all_projects() -> list[dict]:
                 "vc_score": score,
                 "investors": _safe_decode_investors(row["investors"]),
                 "source": row["source"] or "N/A",
+        projects.append(
+            {
+                "project_name": row["project_name"],
+                "action": row["action"] or "N/A",
+                "vc_score": score,
+                "investors": _safe_decode_investors(row["investors"]),
                 "discovery_date": row["timestamp"] or "N/A",
                 "score_class": "score-high" if score >= 18 else "score-medium" if score >= 8 else "score-low",
             }
