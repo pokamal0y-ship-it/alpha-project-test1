@@ -55,6 +55,23 @@ def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
         return tweets
 
     raise RuntimeError(f"All Nitter instances failed for @{account}: {' | '.join(errors)}")
+    """Fetch and normalize the latest 5 tweets from a public Nitter RSS feed."""
+    rss_url = f"https://nitter.net/{account}/rss"
+    feed = _parse_rss(rss_url)
+
+    if getattr(feed, "bozo", 0):
+        raise RuntimeError(f"Failed to parse RSS for @{account}: {getattr(feed, 'bozo_exception', 'unknown error')}")
+
+    tweets: list[dict[str, Any]] = []
+    for entry in feed.entries[:5]:
+        tweets.append(
+            {
+                "link": getattr(entry, "link", ""),
+                "title": getattr(entry, "title", ""),
+                "published": getattr(entry, "published", ""),
+            }
+        )
+    return tweets
 
 
 async def scouring_engine() -> None:

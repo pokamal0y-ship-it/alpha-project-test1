@@ -154,6 +154,25 @@ def _analyze_with_google_generativeai(raw_text: str, api_key: str) -> dict:
         "a 1-sentence description of the required action, and a list of Venture Capital "
         "investors mentioned. Output ONLY in valid JSON format."
     )
+def analyze_alpha_post(raw_text: str) -> dict:
+    """Extract project, action, investors from raw text using Gemini 1.5 Flash."""
+    import google.generativeai as genai
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable is required.")
+
+    genai.configure(api_key=api_key)
+
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=(
+            "You are a crypto data extractor. Extract the Project Name, "
+            "a 1-sentence description of the required action, and a list of Venture Capital "
+            "investors mentioned. Output ONLY in valid JSON format."
+        ),
+    )
+
     prompt = (
         "Extract from the following raw post and return valid JSON with exactly these keys: "
         '{"project": str, "action": str, "investors": list}. '
@@ -188,6 +207,16 @@ def analyze_alpha_post(raw_text: str) -> dict:
         return _analyze_with_google_genai(raw_text, api_key)
     except ModuleNotFoundError:
         return _analyze_with_google_generativeai(raw_text, api_key)
+    response = model.generate_content(prompt)
+    text = (response.text or "").strip()
+
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+
+    parsed = json.loads(text)
+    return _coerce_extraction(parsed)
 
 
 def calculate_score(extracted_json: dict) -> tuple[int, str]:
@@ -225,6 +254,17 @@ def _get_bot_and_chat_id():
 
 def _telegram_preview_only() -> bool:
     return os.getenv("TELEGRAM_PREVIEW_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+    from aiogram import Bot
+
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("CHAT_ID")
+    if not token:
+        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required.")
+    if not chat_id:
+        raise ValueError("CHAT_ID environment variable is required.")
+    return Bot(token=token), chat_id
 
 
 def _project_exists(project_name: str) -> bool:
@@ -301,6 +341,11 @@ async def process_and_notify(project_data: dict) -> None:
     except Exception as exc:
         print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
         print(message)
+    bot, chat_id = _get_bot_and_chat_id()
+    try:
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+    finally:
+        await bot.session.close()
 
     _insert_project(name, score)
 
