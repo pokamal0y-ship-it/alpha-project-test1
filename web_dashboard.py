@@ -36,6 +36,10 @@ def _safe_decode_investors(raw: object) -> str:
     return text
 
 
+def _safe_project_slug(name: str) -> str:
+    return name.replace(" ", "-")
+
+
 def get_all_projects() -> list[dict]:
     """Fetch all seen projects sorted by timestamp descending."""
     if not Path(DB_PATH).exists():
@@ -50,6 +54,7 @@ def get_all_projects() -> list[dict]:
         query = "SELECT project_name, last_score, timestamp"
         query += ", action" if "action" in columns else ", NULL AS action"
         query += ", investors" if "investors" in columns else ", NULL AS investors"
+        query += ", source" if "source" in columns else ", NULL AS source"
         query += " FROM seen_projects ORDER BY timestamp DESC"
 
         rows = conn.execute(query).fetchall()
@@ -57,6 +62,15 @@ def get_all_projects() -> list[dict]:
     projects = []
     for row in rows:
         score = int(row["last_score"] or 0)
+        project_name = row["project_name"]
+        projects.append(
+            {
+                "project_name": project_name,
+                "project_slug": _safe_project_slug(project_name),
+                "action": row["action"] or "N/A",
+                "vc_score": score,
+                "investors": _safe_decode_investors(row["investors"]),
+                "source": row["source"] or "N/A",
         projects.append(
             {
                 "project_name": row["project_name"],
@@ -71,10 +85,26 @@ def get_all_projects() -> list[dict]:
     return projects
 
 
+def get_project(project_slug: str) -> dict | None:
+    for project in get_all_projects():
+        if project["project_slug"] == project_slug:
+            return project
+    return None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     projects = get_all_projects()
     return templates.TemplateResponse("index.html", {"request": request, "projects": projects})
+
+
+@app.get("/project/{project_slug}", response_class=HTMLResponse)
+async def project_preview(request: Request, project_slug: str):
+    project = get_project(project_slug)
+    return templates.TemplateResponse(
+        "project_preview.html",
+        {"request": request, "project": project, "project_slug": project_slug},
+    )
 
 
 if __name__ == "__main__":

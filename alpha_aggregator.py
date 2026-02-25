@@ -55,12 +55,29 @@ DEFAULT_MODEL_CANDIDATES = [
 def init_db() -> None:
     """Initialize SQLite persistence for seen projects."""
     with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
         cursor = conn.cursor()
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS seen_projects (
                 project_name TEXT PRIMARY KEY,
                 last_score INT,
+                timestamp DATETIME,
+                action TEXT,
+                investors TEXT,
+                source TEXT
+            )
+            """
+        )
+
+        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(seen_projects)").fetchall()}
+        if "action" not in existing_columns:
+            conn.execute("ALTER TABLE seen_projects ADD COLUMN action TEXT")
+        if "investors" not in existing_columns:
+            conn.execute("ALTER TABLE seen_projects ADD COLUMN investors TEXT")
+        if "source" not in existing_columns:
+            conn.execute("ALTER TABLE seen_projects ADD COLUMN source TEXT")
+
                 timestamp DATETIME
             )
             """
@@ -254,6 +271,31 @@ def _project_exists(project_name: str) -> bool:
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM seen_projects WHERE project_name = ?", (project_name,))
+        return cursor.fetchone() is not None
+
+
+def _insert_project(project_data: dict) -> None:
+    now_utc = datetime.now(timezone.utc).isoformat()
+    project_name = str(project_data.get("project", "")).strip()
+    if not project_name:
+        return
+
+    score = int(project_data.get("score", 0))
+    action = str(project_data.get("action", "")).strip() or None
+    investors_raw = project_data.get("investors", [])
+    if isinstance(investors_raw, list):
+        investors = json.dumps([str(item) for item in investors_raw if str(item).strip()])
+    else:
+        investors = json.dumps([])
+    source = str(project_data.get("source", "")).strip() or None
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp, action, investors, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_name, score, now_utc, action, investors, source),
     from aiogram import Bot
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -388,6 +430,7 @@ async def process_and_notify(project_data: dict) -> None:
     if _telegram_preview_only():
         print("[WARN] TELEGRAM_PREVIEW_ONLY enabled. Preview only (no message sent):")
         print(message)
+        _insert_project(project_data)
         _insert_project(name, score)
         return
 
@@ -396,6 +439,7 @@ async def process_and_notify(project_data: dict) -> None:
         if bot is None or chat_id is None:
             print("[WARN] TELEGRAM_BOT_TOKEN/CHAT_ID not set. Preview only (no message sent):")
             print(message)
+            _insert_project(project_data)
             _insert_project(name, score)
             return
 
@@ -404,6 +448,11 @@ async def process_and_notify(project_data: dict) -> None:
     except BaseException as exc:
         print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
         print(message)
+
+    _insert_project(project_data)
+
+
+def _load_mock_data() -> list[dict]:
         try:
             await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
         except Exception as exc:

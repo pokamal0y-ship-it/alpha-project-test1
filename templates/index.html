@@ -16,6 +16,10 @@
       --green: #00ff9d;
       --yellow: #ffd84d;
       --dim: #6f7689;
+      --card: #1a2234;
+    }
+
+    * { box-sizing: border-box; }
     }
 
     * { box-sizing: border-box; }
@@ -28,6 +32,7 @@
       min-height: 100vh;
       padding: 28px;
     }
+    .container { max-width: 1200px; margin: 0 auto; }
 
     .container {
       max-width: 1200px;
@@ -38,6 +43,9 @@
       font-size: clamp(1.5rem, 2.5vw, 2.2rem);
       margin: 0 0 8px;
       color: var(--accent);
+      text-shadow: 0 0 14px rgba(39, 216, 255, 0.45);
+    }
+    .subtitle { margin: 0 0 20px; color: var(--muted); font-size: 0.95rem; }
       letter-spacing: 0.5px;
       text-shadow: 0 0 14px rgba(39, 216, 255, 0.45);
     }
@@ -57,6 +65,7 @@
     }
 
     .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 960px; }
 
     table {
       width: 100%;
@@ -89,6 +98,8 @@
       padding: 4px 10px;
       border-radius: 999px;
       font-weight: 700;
+      border: 1px solid transparent;
+    }
       letter-spacing: 0.2px;
       border: 1px solid transparent;
     }
@@ -99,6 +110,50 @@
       box-shadow: 0 0 14px rgba(0, 255, 157, 0.55);
       border-color: rgba(0, 255, 157, 0.7);
     }
+    .score-medium { color: #352900; background: var(--yellow); border-color: rgba(255, 216, 77, 0.7); }
+    .score-low { color: #dee2ef; background: var(--dim); border-color: rgba(111, 118, 137, 0.8); }
+
+    .project-cell { position: relative; }
+    .project-link {
+      color: #8de8ff;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(141, 232, 255, 0.5);
+    }
+    .project-link:hover { color: #c5f4ff; }
+
+    .hover-preview {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin-top: 6px;
+      width: 320px;
+      z-index: 10;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+      padding: 12px;
+      display: none;
+    }
+    .project-cell:hover .hover-preview { display: block; }
+    .hover-preview p { margin: 0 0 8px; color: var(--muted); font-size: 0.84rem; }
+    .hover-preview .open-btn {
+      display: inline-block;
+      margin-top: 4px;
+      font-size: 0.82rem;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(39, 216, 255, 0.5);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .empty { padding: 36px 18px; color: var(--muted); text-align: center; font-size: 0.95rem; }
+    @media (max-width: 760px) {
+      body { padding: 16px; }
+      tbody td, thead th { padding: 10px 12px; }
+      .hover-preview { position: static; width: auto; margin-top: 8px; }
+      .project-cell:hover .hover-preview { display: block; }
 
     .score-medium {
       color: #352900;
@@ -147,6 +202,15 @@
             {% if projects %}
               {% for item in projects %}
                 <tr>
+                  <td class="project-cell">
+                    <a class="project-link" href="/project/{{ item.project_slug }}">{{ item.project_name }}</a>
+                    <div class="hover-preview">
+                      <p><strong>Action:</strong> {{ item.action }}</p>
+                      <p><strong>Investors:</strong> {{ item.investors }}</p>
+                      <p><strong>Source:</strong> {{ item.source }}</p>
+                      <a class="open-btn" href="/project/{{ item.project_slug }}">Open preview page</a>
+                    </div>
+                  </td>
                   <td>{{ item.project_name }}</td>
                   <td>{{ item.action }}</td>
                   <td><span class="score-pill {{ item.score_class }}">{{ item.vc_score }}</span></td>
