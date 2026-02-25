@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="refresh" content="600" />
+  <title>Crypto Alpha Hunter Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #121826;
+      --line: #283046;
+      --text: #d7e3ff;
+      --muted: #7e8ba8;
+      --accent: #27d8ff;
+      --green: #00ff9d;
+      --yellow: #ffd84d;
+      --dim: #6f7689;
+      --card: #1a2234;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at 15% 10%, #19233c 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 28px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .title {
+      font-size: clamp(1.5rem, 2.5vw, 2.2rem);
+      margin: 0 0 8px;
+      color: var(--accent);
+      text-shadow: 0 0 14px rgba(39, 216, 255, 0.45);
+    }
+    .subtitle { margin: 0 0 20px; color: var(--muted); font-size: 0.95rem; }
+    .panel {
+      background: linear-gradient(180deg, rgba(18,24,38,0.95), rgba(18,24,38,0.85));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.35);
+    }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 960px; }
+    thead th {
+      text-align: left;
+      background: #0f1626;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    tbody td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(40, 48, 70, 0.55);
+      font-size: 0.92rem;
+      vertical-align: top;
+    }
+    tbody tr:hover { background: rgba(39, 216, 255, 0.06); }
+
+    .score-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .score-high {
+      color: #0b1a13;
+      background: var(--green);
+      box-shadow: 0 0 14px rgba(0, 255, 157, 0.55);
+      border-color: rgba(0, 255, 157, 0.7);
+    }
+    .score-medium { color: #352900; background: var(--yellow); border-color: rgba(255, 216, 77, 0.7); }
+    .score-low { color: #dee2ef; background: var(--dim); border-color: rgba(111, 118, 137, 0.8); }
+
+    .project-cell { position: relative; }
+    .project-link {
+      color: #8de8ff;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(141, 232, 255, 0.5);
+    }
+    .project-link:hover { color: #c5f4ff; }
+
+    .hover-preview {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin-top: 6px;
+      width: 320px;
+      z-index: 10;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+      padding: 12px;
+      display: none;
+    }
+    .project-cell:hover .hover-preview { display: block; }
+    .hover-preview p { margin: 0 0 8px; color: var(--muted); font-size: 0.84rem; }
+    .hover-preview .open-btn {
+      display: inline-block;
+      margin-top: 4px;
+      font-size: 0.82rem;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(39, 216, 255, 0.5);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .empty { padding: 36px 18px; color: var(--muted); text-align: center; font-size: 0.95rem; }
+    @media (max-width: 760px) {
+      body { padding: 16px; }
+      tbody td, thead th { padding: 10px 12px; }
+      .hover-preview { position: static; width: auto; margin-top: 8px; }
+      .project-cell:hover .hover-preview { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">Crypto Alpha Hunter</h1>
+    <p class="subtitle">Live opportunity board · auto-refresh every 10 minutes</p>
+
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Project Name</th>
+              <th>Action</th>
+              <th>VC Score</th>
+              <th>Investors</th>
+              <th>Discovery Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if projects %}
+              {% for item in projects %}
+                <tr>
+                  <td class="project-cell">
+                    <a class="project-link" href="/project/{{ item.project_slug }}">{{ item.project_name }}</a>
+                    <div class="hover-preview">
+                      <p><strong>Action:</strong> {{ item.action }}</p>
+                      <p><strong>Investors:</strong> {{ item.investors }}</p>
+                      <p><strong>Source:</strong> {{ item.source }}</p>
+                      <a class="open-btn" href="/project/{{ item.project_slug }}">Open preview page</a>
+                    </div>
+                  </td>
+                  <td>{{ item.action }}</td>
+                  <td><span class="score-pill {{ item.score_class }}">{{ item.vc_score }}</span></td>
+                  <td>{{ item.investors }}</td>
+                  <td>{{ item.discovery_date }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="5" class="empty">No projects found yet in <code>seen_projects</code>.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

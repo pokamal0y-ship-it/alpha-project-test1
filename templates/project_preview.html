@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Preview</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: #0b0f17;
+      color: #d7e3ff;
+      padding: 28px;
+    }
+    .card {
+      max-width: 760px;
+      margin: 0 auto;
+      background: #141d2e;
+      border: 1px solid #283046;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+    }
+    h1 { margin-top: 0; color: #27d8ff; }
+    .row { margin: 10px 0; color: #9fb0d5; }
+    .label { color: #d7e3ff; font-weight: 600; }
+    .back {
+      display: inline-block;
+      margin-top: 14px;
+      color: #27d8ff;
+      text-decoration: none;
+      border: 1px solid rgba(39,216,255,0.5);
+      border-radius: 999px;
+      padding: 6px 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    {% if project %}
+      <h1>{{ project.project_name }}</h1>
+      <div class="row"><span class="label">Action:</span> {{ project.action }}</div>
+      <div class="row"><span class="label">VC Score:</span> {{ project.vc_score }}</div>
+      <div class="row"><span class="label">Investors:</span> {{ project.investors }}</div>
+      <div class="row"><span class="label">Source:</span> {{ project.source }}</div>
+      <div class="row"><span class="label">Discovery:</span> {{ project.discovery_date }}</div>
+    {% else %}
+      <h1>Project not found</h1>
+      <div class="row">No project matched slug: <code>{{ project_slug }}</code></div>
+    {% endif %}
+    <a class="back" href="/">← Back to dashboard</a>
+  </div>
+</body>
+</html>
