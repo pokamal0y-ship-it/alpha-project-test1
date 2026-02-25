@@ -19,6 +19,27 @@ VC_TIERS = {
     "tier_3": {
         "score": 5,
         "investors": ["OKX Ventures", "Dragonfly", "Robot Ventures"],
+        "investors": [
+            "Paradigm",
+            "a16z Crypto",
+            "Polychain Capital",
+        ],
+    },
+    "tier_2": {
+        "score": 8,
+        "investors": [
+            "Binance Labs",
+            "Coinbase Ventures",
+            "Multicoin Capital",
+        ],
+    },
+    "tier_3": {
+        "score": 5,
+        "investors": [
+            "OKX Ventures",
+            "Dragonfly",
+            "Robot Ventures",
+        ],
     },
 }
 
@@ -71,6 +92,11 @@ def _coerce_extraction(payload: dict) -> dict:
     normalized_investors = [str(item).strip() for item in investors if str(item).strip()]
 
     return {"project": project.strip(), "action": action.strip(), "investors": normalized_investors}
+    return {
+        "project": project.strip(),
+        "action": action.strip(),
+        "investors": normalized_investors,
+    }
 
 
 def _extract_json_text(model_text: str) -> str:
@@ -80,6 +106,7 @@ def _extract_json_text(model_text: str) -> str:
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:].strip()
 
+    # Rescue JSON when model wraps it with extra words
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start != -1 and end != -1 and end >= start:
@@ -153,10 +180,18 @@ def _analyze_with_google_generativeai(raw_text: str, api_key: str) -> dict:
             return _coerce_extraction(parsed)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+            text = getattr(response, "text", "") or ""
+            parsed = json.loads(_extract_json_text(text))
+            return _coerce_extraction(parsed)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+
     raise RuntimeError(f"All Gemini model attempts failed: {last_error}")
 
 
 def analyze_alpha_post(raw_text: str) -> dict:
+    """Extract project, action, investors from raw text using Gemini."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is required.")
@@ -165,6 +200,16 @@ def analyze_alpha_post(raw_text: str) -> dict:
         return _analyze_with_google_genai(raw_text, api_key)
     except ModuleNotFoundError:
         return _analyze_with_google_generativeai(raw_text, api_key)
+    response = model.generate_content(prompt)
+    text = (response.text or "").strip()
+
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+
+    parsed = json.loads(text)
+    return _coerce_extraction(parsed)
 
 
 def calculate_score(extracted_json: dict) -> tuple[int, str]:
@@ -174,6 +219,11 @@ def calculate_score(extracted_json: dict) -> tuple[int, str]:
 
     lookup = _investor_score_lookup()
     total_score = sum(lookup.get(str(i).strip().casefold(), 0) for i in investors)
+    total_score = 0
+
+    for investor in investors:
+        normalized = str(investor).strip().casefold()
+        total_score += lookup.get(normalized, 0)
 
     if total_score >= 18:
         label = "🔥 HIGH PRIORITY"
@@ -204,14 +254,37 @@ def _project_exists(project_name: str) -> bool:
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM seen_projects WHERE project_name = ?", (project_name,))
+    from aiogram import Bot
+
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("CHAT_ID")
+    if not token:
+        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required.")
+    if not chat_id:
+        raise ValueError("CHAT_ID environment variable is required.")
+    return Bot(token=token), chat_id
+
+
+def _project_exists(project_name: str) -> bool:
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM seen_projects WHERE project_name = ?",
+            (project_name,),
+        )
         return cursor.fetchone() is not None
 
 
 def _insert_project(project_name: str, score: int) -> None:
     now_utc = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp) VALUES (?, ?, ?)",
+            """
+            INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp)
+            VALUES (?, ?, ?)
+            """,
             (project_name, score, now_utc),
         )
         conn.commit()
@@ -256,6 +329,8 @@ async def send_telegram_test_message() -> None:
 
 async def process_and_notify(project_data: dict) -> None:
     """Send a Telegram alert for unseen and valuable/immediate opportunities."""
+async def process_and_notify(project_data: dict) -> None:
+    """Send a Telegram alert only for unseen projects with score >= 8."""
     name = str(project_data.get("project", "")).strip()
     if not name:
         return
@@ -271,6 +346,24 @@ async def process_and_notify(project_data: dict) -> None:
         return
 
     message = _format_message(project_data)
+    if _project_exists(name):
+        return
+
+    if score < 8:
+        return
+
+    action = str(project_data.get("action", "")).strip() or "N/A"
+    investors = project_data.get("investors", [])
+    investors_list = ", ".join(str(i) for i in investors) if investors else "None"
+
+    message = (
+        "🚀 **NEW ALPHA DETECTED** 🚀\n\n"
+        f"🔹 **Project:** {name}\n"
+        f"🛠 **Action:** {action}\n"
+        f"💰 **VC Score:** {score}/10\n"
+        f"👥 **Investors:** {investors_list}\n\n"
+        "🔗 *Check source for details.*"
+    )
 
     if _telegram_preview_only():
         print("[WARN] TELEGRAM_PREVIEW_ONLY enabled. Preview only (no message sent):")
@@ -296,11 +389,17 @@ async def process_and_notify(project_data: dict) -> None:
     except Exception as exc:
         print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
         print(message)
+    bot, chat_id = _get_bot_and_chat_id()
+    try:
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+    finally:
+        await bot.session.close()
 
     _insert_project(name, score)
 
 
 def _load_mock_data() -> list[dict]:
+    """Mock pipeline input for local simulation."""
     return [
         {
             "project": "Monad",
@@ -319,22 +418,10 @@ def _load_mock_data() -> list[dict]:
     ]
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Nexus Alpha aggregator runner")
-    parser.add_argument("--telegram-test", action="store_true", help="send one Telegram test message (or preview)")
-    parser.add_argument("--preview-only", action="store_true", help="force preview mode for this run")
-    return parser.parse_args()
-
-
 async def main() -> None:
-    args = _parse_args()
     init_db()
 
-    if args.preview_only:
-        os.environ["TELEGRAM_PREVIEW_ONLY"] = "1"
-
-    env_test = os.getenv("TELEGRAM_SEND_TEST", "").strip().lower() in {"1", "true", "yes", "on"}
-    if args.telegram_test or env_test:
+    if os.getenv("TELEGRAM_SEND_TEST", "").strip().lower() in {"1", "true", "yes", "on"}:
         await send_telegram_test_message()
         return
 
