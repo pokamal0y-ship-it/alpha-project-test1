@@ -278,6 +278,8 @@ def _project_exists(project_name: str) -> bool:
 def _insert_project(project_name: str, score: int) -> None:
     now_utc = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp) VALUES (?, ?, ?)",
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp) VALUES (?, ?, ?)",
@@ -289,6 +291,24 @@ def _insert_project(project_name: str, score: int) -> None:
         )
         conn.commit()
 
+
+
+
+async def _safe_send_message(bot, chat_id: str, message: str) -> bool:
+    try:
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        return True
+    except BaseException as exc:  # noqa: BLE001
+        print(f"[WARN] Telegram send failed ({exc}). Falling back to preview mode:")
+        print(message)
+        return False
+
+
+async def _safe_close_bot(bot) -> None:
+    try:
+        await bot.session.close()
+    except BaseException as exc:  # noqa: BLE001
+        print(f"[WARN] Telegram bot session close failed: {exc}")
 
 def _format_message(project_data: dict) -> str:
     name = str(project_data.get("project", "")).strip() or "Unknown"
@@ -379,6 +399,11 @@ async def process_and_notify(project_data: dict) -> None:
             _insert_project(name, score)
             return
 
+        await _safe_send_message(bot, chat_id, message)
+        await _safe_close_bot(bot)
+    except BaseException as exc:
+        print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
+        print(message)
         try:
             await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
         except Exception as exc:
@@ -418,6 +443,33 @@ def _load_mock_data() -> list[dict]:
     ]
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Nexus Alpha aggregator runner")
+    parser.add_argument("--telegram-test", action="store_true", help="send one Telegram test message (or preview)")
+    parser.add_argument("--preview-only", action="store_true", help="force preview mode for this run")
+    return parser.parse_args()
+
+
+async def main() -> None:
+    args = _parse_args()
+    init_db()
+
+    if args.preview_only:
+        os.environ["TELEGRAM_PREVIEW_ONLY"] = "1"
+
+    env_test = os.getenv("TELEGRAM_SEND_TEST", "").strip().lower() in {"1", "true", "yes", "on"}
+    if args.telegram_test or env_test:
+        try:
+            await send_telegram_test_message()
+        except BaseException as exc:
+            print(f"[WARN] Telegram test flow failed safely: {exc}")
+        return
+
+    for project_data in _load_mock_data():
+        try:
+            await process_and_notify(project_data)
+        except BaseException as exc:
+            print(f"[WARN] Processing failed safely for mock data: {exc}")
 async def main() -> None:
     init_db()
 
