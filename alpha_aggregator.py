@@ -9,6 +9,15 @@ from datetime import datetime, timezone
 VC_TIERS = {
     "tier_1": {
         "score": 10,
+        "investors": ["Paradigm", "a16z Crypto", "Polychain Capital"],
+    },
+    "tier_2": {
+        "score": 8,
+        "investors": ["Binance Labs", "Coinbase Ventures", "Multicoin Capital"],
+    },
+    "tier_3": {
+        "score": 5,
+        "investors": ["OKX Ventures", "Dragonfly", "Robot Ventures"],
         "investors": [
             "Paradigm",
             "a16z Crypto",
@@ -81,6 +90,7 @@ def _coerce_extraction(payload: dict) -> dict:
 
     normalized_investors = [str(item).strip() for item in investors if str(item).strip()]
 
+    return {"project": project.strip(), "action": action.strip(), "investors": normalized_investors}
     return {
         "project": project.strip(),
         "action": action.strip(),
@@ -136,6 +146,10 @@ def _analyze_with_google_genai(raw_text: str, api_key: str) -> dict:
                 contents=prompt,
                 config=types.GenerateContentConfig(system_instruction=system_instruction),
             )
+            parsed = json.loads(_extract_json_text(getattr(response, "text", "") or ""))
+            return _coerce_extraction(parsed)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
             text = getattr(response, "text", "") or ""
             parsed = json.loads(_extract_json_text(text))
             return _coerce_extraction(parsed)
@@ -187,6 +201,10 @@ def analyze_alpha_post(raw_text: str) -> dict:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(prompt)
+            parsed = json.loads(_extract_json_text(getattr(response, "text", "") or ""))
+            return _coerce_extraction(parsed)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
             text = getattr(response, "text", "") or ""
             parsed = json.loads(_extract_json_text(text))
             return _coerce_extraction(parsed)
@@ -225,6 +243,7 @@ def calculate_score(extracted_json: dict) -> tuple[int, str]:
         investors = []
 
     lookup = _investor_score_lookup()
+    total_score = sum(lookup.get(str(i).strip().casefold(), 0) for i in investors)
     total_score = 0
 
     for investor in investors:
@@ -256,6 +275,10 @@ def _telegram_preview_only() -> bool:
     return os.getenv("TELEGRAM_PREVIEW_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _project_exists(project_name: str) -> bool:
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM seen_projects WHERE project_name = ?", (project_name,))
     from aiogram import Bot
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -282,6 +305,7 @@ def _insert_project(project_name: str, score: int) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute(
+            "INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp) VALUES (?, ?, ?)",
             """
             INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp)
             VALUES (?, ?, ?)
@@ -291,6 +315,45 @@ def _insert_project(project_name: str, score: int) -> None:
         conn.commit()
 
 
+def _format_message(project_data: dict) -> str:
+    name = str(project_data.get("project", "")).strip() or "Unknown"
+    action = str(project_data.get("action", "")).strip() or "N/A"
+    score = int(project_data.get("score", 0))
+    investors = project_data.get("investors", [])
+    investors_list = ", ".join(str(i) for i in investors) if investors else "None"
+    source = str(project_data.get("source", "")).strip()
+    immediate = bool(project_data.get("immediate_token"))
+
+    header = "⚡ **IMMEDIATE TOKEN OPPORTUNITY** ⚡" if immediate else "🚀 **NEW ALPHA DETECTED** 🚀"
+    source_line = f"\n🔗 **Source:** {source}" if source else ""
+
+    return (
+        f"{header}\n\n"
+        f"🔹 **Project:** {name}\n"
+        f"🛠 **Action:** {action}\n"
+        f"💰 **VC Score:** {score}/10\n"
+        f"👥 **Investors:** {investors_list}"
+        f"{source_line}\n\n"
+        "🔗 *Check source for details.*"
+    )
+
+
+async def send_telegram_test_message() -> None:
+    """Send a direct Telegram test message (or preview if disabled)."""
+    payload = {
+        "project": "Nexus Alpha Test",
+        "action": "Connectivity check",
+        "investors": ["Paradigm"],
+        "score": 10,
+        "source": "local-test",
+        "immediate_token": False,
+        "force_send": True,
+    }
+    await process_and_notify(payload)
+
+
+async def process_and_notify(project_data: dict) -> None:
+    """Send a Telegram alert for unseen and valuable/immediate opportunities."""
 async def process_and_notify(project_data: dict) -> None:
     """Send a Telegram alert only for unseen projects with score >= 8."""
     name = str(project_data.get("project", "")).strip()
@@ -298,6 +361,16 @@ async def process_and_notify(project_data: dict) -> None:
         return
 
     score = int(project_data.get("score", 0))
+    immediate = bool(project_data.get("immediate_token"))
+    force_send = bool(project_data.get("force_send"))
+
+    if _project_exists(name) and not force_send:
+        return
+
+    if score < 8 and not immediate and not force_send:
+        return
+
+    message = _format_message(project_data)
     if _project_exists(name):
         return
 
@@ -358,18 +431,25 @@ def _load_mock_data() -> list[dict]:
             "action": "Join Testnet",
             "investors": ["Paradigm", "Coinbase Ventures"],
             "score": 18,
+            "source": "https://nitter.net/Monad_xyz",
         },
         {
             "project": "Monad",
             "action": "Join Testnet",
             "investors": ["Paradigm"],
             "score": 18,
+            "source": "https://nitter.net/Monad_xyz",
         },
     ]
 
 
 async def main() -> None:
     init_db()
+
+    if os.getenv("TELEGRAM_SEND_TEST", "").strip().lower() in {"1", "true", "yes", "on"}:
+        await send_telegram_test_message()
+        return
+
     for project_data in _load_mock_data():
         await process_and_notify(project_data)
 
