@@ -1,5 +1,6 @@
 """Crypto Alpha Hunter: extraction, scoring, persistence, and Telegram alerts."""
 
+import argparse
 import asyncio
 import json
 import os
@@ -150,13 +151,6 @@ def _analyze_with_google_genai(raw_text: str, api_key: str) -> dict:
             return _coerce_extraction(parsed)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            text = getattr(response, "text", "") or ""
-            parsed = json.loads(_extract_json_text(text))
-            return _coerce_extraction(parsed)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            continue
-
     raise RuntimeError(f"All Gemini model attempts failed: {last_error}")
 
 
@@ -168,25 +162,6 @@ def _analyze_with_google_generativeai(raw_text: str, api_key: str) -> dict:
         "a 1-sentence description of the required action, and a list of Venture Capital "
         "investors mentioned. Output ONLY in valid JSON format."
     )
-def analyze_alpha_post(raw_text: str) -> dict:
-    """Extract project, action, investors from raw text using Gemini 1.5 Flash."""
-    import google.generativeai as genai
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is required.")
-
-    genai.configure(api_key=api_key)
-
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=(
-            "You are a crypto data extractor. Extract the Project Name, "
-            "a 1-sentence description of the required action, and a list of Venture Capital "
-            "investors mentioned. Output ONLY in valid JSON format."
-        ),
-    )
-
     prompt = (
         "Extract from the following raw post and return valid JSON with exactly these keys: "
         '{"project": str, "action": str, "investors": list}. '
