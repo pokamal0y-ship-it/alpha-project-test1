@@ -1,4 +1,5 @@
 """Data scraper for X (Twitter) and site feeds with immediate-token detection."""
+"""Data scraper module for X (Twitter) via RSS/Nitter feeds."""
 
 import asyncio
 from typing import Any
@@ -74,6 +75,12 @@ def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
                     "source_instance": instance,
                     "source_type": "x",
                     "immediate_hint": _is_immediate_token_opportunity(title),
+            tweets.append(
+                {
+                    "link": getattr(entry, "link", ""),
+                    "title": getattr(entry, "title", ""),
+                    "published": getattr(entry, "published", ""),
+                    "source_instance": instance,
                 }
             )
         return tweets
@@ -142,6 +149,27 @@ async def _process_item(item: dict[str, Any], account_label: str) -> None:
 
 async def scouring_engine() -> None:
     """Every 15 minutes scan X + sites and trigger high-priority/immediate alerts."""
+    """Fetch and normalize the latest 5 tweets from a public Nitter RSS feed."""
+    rss_url = f"https://nitter.net/{account}/rss"
+    feed = _parse_rss(rss_url)
+
+    if getattr(feed, "bozo", 0):
+        raise RuntimeError(f"Failed to parse RSS for @{account}: {getattr(feed, 'bozo_exception', 'unknown error')}")
+
+    tweets: list[dict[str, Any]] = []
+    for entry in feed.entries[:5]:
+        tweets.append(
+            {
+                "link": getattr(entry, "link", ""),
+                "title": getattr(entry, "title", ""),
+                "published": getattr(entry, "published", ""),
+            }
+        )
+    return tweets
+
+
+async def scouring_engine() -> None:
+    """Every 15 minutes scan target accounts and trigger high-priority alerts."""
     while True:
         for account in TARGET_ACCOUNTS:
             try:
@@ -162,6 +190,34 @@ async def scouring_engine() -> None:
 
             for item in items:
                 await _process_item(item, feed_url)
+                raw_text = tweet.get("title", "")
+                if not raw_text:
+                    continue
+
+                try:
+                    extracted = analyze_alpha_post(raw_text)
+                    score, priority = calculate_score(extracted)
+                except Exception as exc:
+                    print(f"[WARN] Analysis failed for @{account} tweet {tweet.get('link', '')}: {exc}")
+                    continue
+
+                if "HIGH PRIORITY" not in priority:
+                    continue
+
+                project_data = {
+                    "project": extracted.get("project", ""),
+                    "action": extracted.get("action", ""),
+                    "investors": extracted.get("investors", []),
+                    "score": score,
+                    "source": tweet.get("link", ""),
+                    "published": tweet.get("published", ""),
+                    "source_instance": tweet.get("source_instance", ""),
+                }
+
+                try:
+                    await process_and_notify(project_data)
+                except Exception as exc:
+                    print(f"[WARN] Notification failed for @{account}: {exc}")
 
         await asyncio.sleep(15 * 60)
 

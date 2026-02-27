@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 DB_PATH = "alpha_hunter.db"
@@ -42,22 +40,7 @@ def _safe_project_slug(name: str) -> str:
     return name.replace(" ", "-")
 
 
-def _project_from_row(row: sqlite3.Row) -> dict[str, Any]:
-    score = int(row["last_score"] or 0)
-    project_name = row["project_name"]
-    return {
-        "project_name": project_name,
-        "project_slug": _safe_project_slug(project_name),
-        "action": row["action"] or "N/A",
-        "vc_score": score,
-        "investors": _safe_decode_investors(row["investors"]),
-        "source": row["source"] or "N/A",
-        "discovery_date": row["timestamp"] or "N/A",
-        "score_class": "score-high" if score >= 18 else "score-medium" if score >= 8 else "score-low",
-    }
-
-
-def get_all_projects() -> list[dict[str, Any]]:
+def get_all_projects() -> list[dict]:
     """Fetch all seen projects sorted by timestamp descending."""
     if not Path(DB_PATH).exists():
         return []
@@ -76,10 +59,33 @@ def get_all_projects() -> list[dict[str, Any]]:
 
         rows = conn.execute(query).fetchall()
 
-    return [_project_from_row(row) for row in rows]
+    projects = []
+    for row in rows:
+        score = int(row["last_score"] or 0)
+        project_name = row["project_name"]
+        projects.append(
+            {
+                "project_name": project_name,
+                "project_slug": _safe_project_slug(project_name),
+                "action": row["action"] or "N/A",
+                "vc_score": score,
+                "investors": _safe_decode_investors(row["investors"]),
+                "source": row["source"] or "N/A",
+        projects.append(
+            {
+                "project_name": row["project_name"],
+                "action": row["action"] or "N/A",
+                "vc_score": score,
+                "investors": _safe_decode_investors(row["investors"]),
+                "discovery_date": row["timestamp"] or "N/A",
+                "score_class": "score-high" if score >= 18 else "score-medium" if score >= 8 else "score-low",
+            }
+        )
+
+    return projects
 
 
-def get_project(project_slug: str) -> dict[str, Any] | None:
+def get_project(project_slug: str) -> dict | None:
     for project in get_all_projects():
         if project["project_slug"] == project_slug:
             return project
@@ -101,21 +107,7 @@ async def project_preview(request: Request, project_slug: str):
     )
 
 
-@app.get("/health", response_class=JSONResponse)
-async def healthcheck():
-    return {"status": "ok", "db_exists": Path(DB_PATH).exists()}
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Crypto Alpha Hunter dashboard")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--reload", action="store_true")
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     import uvicorn
 
-    args = _parse_args()
-    uvicorn.run("web_dashboard:app", host=args.host, port=args.port, reload=args.reload)
+    uvicorn.run("web_dashboard:app", host="127.0.0.1", port=8000, reload=False)
