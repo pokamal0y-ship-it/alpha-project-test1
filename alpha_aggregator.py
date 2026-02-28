@@ -249,11 +249,16 @@ def _rule_based_extraction(raw_text: str) -> dict:
     }
 
 
+_FALLBACK_WARNED = False
+
 def analyze_alpha_post(raw_text: str) -> dict:
     """Extract project, action, investors from raw text using Gemini or fallback."""
+    global _FALLBACK_WARNED
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        print("[INFO] GEMINI_API_KEY not found. Using rule-based fallback.")
+        if not _FALLBACK_WARNED:
+            print("[INFO] GEMINI_API_KEY not found. Using rule-based fallback.")
+            _FALLBACK_WARNED = True
         return _rule_based_extraction(raw_text)
 
     try:
