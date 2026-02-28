@@ -4,9 +4,13 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+
+# Load environment variables from .env file
+load_dotenv()
 
 from alpha_aggregator import analyze_alpha_post, calculate_score, process_and_notify, init_db, seed_initial_projects
 from x_scraper import fetch_latest_tweets, fetch_site_feed_items, TARGET_ACCOUNTS, SITE_FEEDS
