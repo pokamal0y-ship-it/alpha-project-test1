@@ -5,7 +5,13 @@ import asyncio
 import json
 import os
 import sqlite3
+import logging
 from datetime import datetime, timezone
+
+# Suppress verbose logs from external libraries
+logging.getLogger("google_genai").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.ERROR)
+logging.getLogger("google.generativeai").setLevel(logging.ERROR)
 
 VC_TIERS = {
     "tier_1": {
