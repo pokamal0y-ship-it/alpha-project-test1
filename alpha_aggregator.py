@@ -210,16 +210,57 @@ def _analyze_with_google_generativeai(raw_text: str, api_key: str) -> dict:
     raise RuntimeError(f"All Gemini model attempts failed: {last_error}")
 
 
+def _rule_based_extraction(raw_text: str) -> dict:
+    """Fallback extractor using regex and keyword matching."""
+    text = raw_text.strip()
+    lines = text.split('\n')
+    
+    # 1. Try to find a project name (usually first capitalized word or "Project: ...")
+    project = "Unknown Project"
+    import re
+    project_match = re.search(r"(?:Project|Protocol|App):\s*(\w+)", text, re.I)
+    if project_match:
+        project = project_match.group(1)
+    elif lines:
+        # Just take the first few words of the first line as a guess
+        first_line_words = lines[0].split()
+        if first_line_words:
+            project = first_line_words[0].strip(":#*")
+
+    # 2. Match known investors from VC_TIERS
+    found_investors = []
+    lookup = _investor_score_lookup()
+    normalized_text = text.lower()
+    for investor_name in lookup.keys():
+        if investor_name in normalized_text:
+            # Re-capitalize for display if possible, or just use the key
+            found_investors.append(investor_name.title())
+
+    return {
+        "project": project,
+        "action": "Rule-based extraction (Manual review recommended)",
+        "investors": list(set(found_investors))
+    }
+
+
 def analyze_alpha_post(raw_text: str) -> dict:
-    """Extract project, action, investors from raw text using Gemini."""
+    """Extract project, action, investors from raw text using Gemini or fallback."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is required.")
+        print("[INFO] GEMINI_API_KEY not found. Using rule-based fallback.")
+        return _rule_based_extraction(raw_text)
 
     try:
         return _analyze_with_google_genai(raw_text, api_key)
     except (ModuleNotFoundError, ImportError):
-        return _analyze_with_google_generativeai(raw_text, api_key)
+        try:
+            return _analyze_with_google_generativeai(raw_text, api_key)
+        except Exception as exc:
+            print(f"[WARN] Gemini extraction failed ({exc}). Using rule-based fallback.")
+            return _rule_based_extraction(raw_text)
+    except Exception as exc:
+        print(f"[WARN] Gemini extraction failed ({exc}). Using rule-based fallback.")
+        return _rule_based_extraction(raw_text)
 
 
 def calculate_score(extracted_json: dict) -> tuple[int, str]:
