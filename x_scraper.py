@@ -2,6 +2,9 @@
 
 import asyncio
 from typing import Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from alpha_aggregator import analyze_alpha_post, calculate_score, process_and_notify
 
@@ -20,8 +23,10 @@ SITE_FEEDS = [
 
 NITTER_INSTANCES = [
     "https://nitter.net",
-    "https://nitter.poast.org",
+    "https://nitter.cz",
+    "https://nitter.it",
     "https://nitter.privacydev.net",
+    "https://nitter.poast.org",
 ]
 
 IMMEDIATE_TOKEN_KEYWORDS = [
@@ -84,11 +89,13 @@ def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
 def fetch_site_feed_items(feed_url: str) -> list[dict[str, Any]]:
     """Fetch latest 5 opportunities from site RSS feeds."""
     feed = _parse_rss(feed_url)
-    if getattr(feed, "bozo", 0):
+    if getattr(feed, "bozo", 0) and not getattr(feed, "entries", None):
+        # Only raise if we have no entries at all
         raise RuntimeError(f"Failed to parse site feed {feed_url}: {getattr(feed, 'bozo_exception', 'unknown parse error')}")
 
     items: list[dict[str, Any]] = []
-    for entry in feed.entries[:5]:
+    entries = getattr(feed, "entries", [])
+    for entry in entries[:5]:
         title = getattr(entry, "title", "")
         summary = getattr(entry, "summary", "")
         text_blob = f"{title} {summary}".strip()
