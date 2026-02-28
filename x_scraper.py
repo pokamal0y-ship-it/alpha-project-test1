@@ -22,11 +22,12 @@ SITE_FEEDS = [
 ]
 
 NITTER_INSTANCES = [
-    "https://nitter.net",
-    "https://nitter.cz",
-    "https://nitter.it",
-    "https://nitter.privacydev.net",
     "https://nitter.poast.org",
+    "https://xcancel.com",
+    "https://nitter.privacydev.com",
+    "https://nitter.projectsegfau.lt",
+    "https://nitter.rawbit.ninja",
+    "https://nitter.cz",
 ]
 
 IMMEDIATE_TOKEN_KEYWORDS = [
@@ -43,8 +44,30 @@ IMMEDIATE_TOKEN_KEYWORDS = [
 
 def _parse_rss(url: str):
     import feedparser
+    import urllib.request
+    import re
 
-    return feedparser.parse(url)
+    try:
+        # Fetch content manually to allow cleaning
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (AlphaHunter/1.0)"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            raw_data = response.read()
+            
+            # Decode with error handling
+            try:
+                text = raw_data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw_data.decode("latin-1", errors="replace")
+
+            # Cleaning step: Remove invalid XML control characters
+            # This regex removes most non-printable characters that break XML parsers,
+            # but keeps common whitespace (tab, newline, carriage return).
+            cleaned_text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
+            
+            return feedparser.parse(cleaned_text)
+    except Exception as e:
+        # Fallback to direct parsing if manual fetch fails
+        return feedparser.parse(url)
 
 
 def _is_immediate_token_opportunity(text: str) -> bool:
@@ -53,37 +76,54 @@ def _is_immediate_token_opportunity(text: str) -> bool:
 
 
 def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
-    """Fetch and normalize the latest 5 tweets from available Nitter RSS feeds."""
+    """Fetch and normalize the latest 5 tweets from available Nitter RSS feeds with robust rotation."""
+    import random
+    
+    # Shuffle instances for load balancing and better success rates
+    instances = list(NITTER_INSTANCES)
+    random.shuffle(instances)
+    
     errors: list[str] = []
 
-    for instance in NITTER_INSTANCES:
+    for instance in instances:
         rss_url = f"{instance}/{account}/rss"
-        feed = _parse_rss(rss_url)
+        try:
+            feed = _parse_rss(rss_url)
+            
+            # Check for common Nitter/RSS parsing failures
+            if getattr(feed, "bozo", 0):
+                exc = getattr(feed, "bozo_exception", "Unknown parse error")
+                # Suppress common XML/HTML mismatch noise in logs
+                errors.append(f"{instance}: {str(exc)[:50]}...")
+                continue
 
-        if getattr(feed, "bozo", 0):
-            errors.append(f"{instance}: {getattr(feed, 'bozo_exception', 'unknown parse error')}")
+            entries = getattr(feed, "entries", [])
+            if not entries:
+                errors.append(f"{instance}: No entries found")
+                continue
+
+            # If we got here, we have a valid feed
+            tweets: list[dict[str, Any]] = []
+            for entry in entries[:5]:
+                title = getattr(entry, "title", "")
+                tweets.append(
+                    {
+                        "link": getattr(entry, "link", ""),
+                        "title": title,
+                        "published": getattr(entry, "published", ""),
+                        "source_instance": instance,
+                        "source_type": "x",
+                        "immediate_hint": _is_immediate_token_opportunity(title),
+                    }
+                )
+            return tweets
+
+        except Exception as e:
+            errors.append(f"{instance}: Exception {type(e).__name__}")
             continue
 
-        if not getattr(feed, "entries", None):
-            errors.append(f"{instance}: empty feed entries")
-            continue
-
-        tweets: list[dict[str, Any]] = []
-        for entry in feed.entries[:5]:
-            title = getattr(entry, "title", "")
-            tweets.append(
-                {
-                    "link": getattr(entry, "link", ""),
-                    "title": title,
-                    "published": getattr(entry, "published", ""),
-                    "source_instance": instance,
-                    "source_type": "x",
-                    "immediate_hint": _is_immediate_token_opportunity(title),
-                }
-            )
-        return tweets
-
-    raise RuntimeError(f"All Nitter instances failed for @{account}: {' | '.join(errors)}")
+    error_summary = " | ".join(errors)
+    raise RuntimeError(f"All Nitter instances failed for @{account}. Errors: {error_summary}")
 
 
 def fetch_site_feed_items(feed_url: str) -> list[dict[str, Any]]:
