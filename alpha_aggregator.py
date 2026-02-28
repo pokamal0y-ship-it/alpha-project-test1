@@ -19,27 +19,6 @@ VC_TIERS = {
     "tier_3": {
         "score": 5,
         "investors": ["OKX Ventures", "Dragonfly", "Robot Ventures"],
-        "investors": [
-            "Paradigm",
-            "a16z Crypto",
-            "Polychain Capital",
-        ],
-    },
-    "tier_2": {
-        "score": 8,
-        "investors": [
-            "Binance Labs",
-            "Coinbase Ventures",
-            "Multicoin Capital",
-        ],
-    },
-    "tier_3": {
-        "score": 5,
-        "investors": [
-            "OKX Ventures",
-            "Dragonfly",
-            "Robot Ventures",
-        ],
     },
 }
 
@@ -55,7 +34,6 @@ DEFAULT_MODEL_CANDIDATES = [
 def init_db() -> None:
     """Initialize SQLite persistence for seen projects."""
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
         cursor = conn.cursor()
         cursor.execute(
             """
@@ -65,24 +43,55 @@ def init_db() -> None:
                 timestamp DATETIME,
                 action TEXT,
                 investors TEXT,
-                source TEXT
+                source TEXT,
+                frequency TEXT
             )
             """
         )
 
         existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(seen_projects)").fetchall()}
-        if "action" not in existing_columns:
-            conn.execute("ALTER TABLE seen_projects ADD COLUMN action TEXT")
-        if "investors" not in existing_columns:
-            conn.execute("ALTER TABLE seen_projects ADD COLUMN investors TEXT")
-        if "source" not in existing_columns:
-            conn.execute("ALTER TABLE seen_projects ADD COLUMN source TEXT")
+        columns_to_add = {
+            "action": "TEXT",
+            "investors": "TEXT",
+            "source": "TEXT",
+            "frequency": "TEXT"
+        }
+        for col_name, col_type in columns_to_add.items():
+            if col_name not in existing_columns:
+                conn.execute(f"ALTER TABLE seen_projects ADD COLUMN {col_name} {col_type}")
 
-                timestamp DATETIME
-            )
-            """
-        )
         conn.commit()
+
+
+def seed_initial_projects() -> None:
+    """Automatically add initial projects to seen_projects if not exists."""
+    initial_projects = [
+        {
+            "project": "Sentio",
+            "action": "Binance Web3 Quest",
+            "investors": ["Binance Labs"],
+            "score": 18,  # HIGH
+            "frequency": "daily_scan"
+        },
+        {
+            "project": "Monad",
+            "action": "Weekly Testnet Swaps",
+            "investors": ["Paradigm"],
+            "score": 20,  # Tier-0
+            "frequency": "daily_scan"
+        },
+        {
+            "project": "DataHaven",
+            "action": "Daily Check-in",
+            "investors": ["Coinbase Ventures"], # Tier-2
+            "score": 8,   # MEDIUM
+            "frequency": "daily_scan"
+        }
+    ]
+    for p in initial_projects:
+        if not _project_exists(p["project"]):
+            _insert_project(p)
+            print(f"[INFO] Seeded project: {p['project']}")
 
 
 def _investor_score_lookup() -> dict[str, int]:
@@ -95,20 +104,19 @@ def _investor_score_lookup() -> dict[str, int]:
 
 
 def _coerce_extraction(payload: dict) -> dict:
-    project = payload.get("project")
-    action = payload.get("action")
+    project = payload.get("project", "")
+    action = payload.get("action", "")
     investors = payload.get("investors", [])
 
     if not isinstance(project, str):
-        project = ""
+        project = str(project)
     if not isinstance(action, str):
-        action = ""
+        action = str(action)
     if not isinstance(investors, list):
         investors = []
 
     normalized_investors = [str(item).strip() for item in investors if str(item).strip()]
 
-    return {"project": project.strip(), "action": action.strip(), "investors": normalized_investors}
     return {
         "project": project.strip(),
         "action": action.strip(),
@@ -197,11 +205,6 @@ def _analyze_with_google_generativeai(raw_text: str, api_key: str) -> dict:
             return _coerce_extraction(parsed)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            text = getattr(response, "text", "") or ""
-            parsed = json.loads(_extract_json_text(text))
-            return _coerce_extraction(parsed)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
             continue
 
     raise RuntimeError(f"All Gemini model attempts failed: {last_error}")
@@ -215,18 +218,8 @@ def analyze_alpha_post(raw_text: str) -> dict:
 
     try:
         return _analyze_with_google_genai(raw_text, api_key)
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ImportError):
         return _analyze_with_google_generativeai(raw_text, api_key)
-    response = model.generate_content(prompt)
-    text = (response.text or "").strip()
-
-    if text.startswith("```"):
-        text = text.strip("`").strip()
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-
-    parsed = json.loads(text)
-    return _coerce_extraction(parsed)
 
 
 def calculate_score(extracted_json: dict) -> tuple[int, str]:
@@ -235,7 +228,6 @@ def calculate_score(extracted_json: dict) -> tuple[int, str]:
         investors = []
 
     lookup = _investor_score_lookup()
-    total_score = sum(lookup.get(str(i).strip().casefold(), 0) for i in investors)
     total_score = 0
 
     for investor in investors:
@@ -288,59 +280,24 @@ def _insert_project(project_data: dict) -> None:
     else:
         investors = json.dumps([])
     source = str(project_data.get("source", "")).strip() or None
+    frequency = str(project_data.get("frequency", "")).strip() or None
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp, action, investors, source)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp, action, investors, source, frequency)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (project_name, score, now_utc, action, investors, source),
-    from aiogram import Bot
-
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("CHAT_ID")
-    if not token:
-        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required.")
-    if not chat_id:
-        raise ValueError("CHAT_ID environment variable is required.")
-    return Bot(token=token), chat_id
-
-
-def _project_exists(project_name: str) -> bool:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT 1 FROM seen_projects WHERE project_name = ?",
-            (project_name,),
-        )
-        return cursor.fetchone() is not None
-
-
-def _insert_project(project_name: str, score: int) -> None:
-    now_utc = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp) VALUES (?, ?, ?)",
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp) VALUES (?, ?, ?)",
-            """
-            INSERT OR REPLACE INTO seen_projects (project_name, last_score, timestamp)
-            VALUES (?, ?, ?)
-            """,
-            (project_name, score, now_utc),
+            (project_name, score, now_utc, action, investors, source, frequency),
         )
         conn.commit()
-
-
 
 
 async def _safe_send_message(bot, chat_id: str, message: str) -> bool:
     try:
         await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
         return True
-    except BaseException as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         print(f"[WARN] Telegram send failed ({exc}). Falling back to preview mode:")
         print(message)
         return False
@@ -349,8 +306,9 @@ async def _safe_send_message(bot, chat_id: str, message: str) -> bool:
 async def _safe_close_bot(bot) -> None:
     try:
         await bot.session.close()
-    except BaseException as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         print(f"[WARN] Telegram bot session close failed: {exc}")
+
 
 def _format_message(project_data: dict) -> str:
     name = str(project_data.get("project", "")).strip() or "Unknown"
@@ -359,10 +317,13 @@ def _format_message(project_data: dict) -> str:
     investors = project_data.get("investors", [])
     investors_list = ", ".join(str(i) for i in investors) if investors else "None"
     source = str(project_data.get("source", "")).strip()
+    frequency = str(project_data.get("frequency", "")).strip()
     immediate = bool(project_data.get("immediate_token"))
 
     header = "⚡ **IMMEDIATE TOKEN OPPORTUNITY** ⚡" if immediate else "🚀 **NEW ALPHA DETECTED** 🚀"
     source_line = f"\n🔗 **Source:** {source}" if source else ""
+    tag = frequency.replace("_scan", "").replace("_research", "").replace("_alpha", "").upper()
+    tag_line = f"\n🏷 **Tag:** #{tag}" if tag else ""
 
     return (
         f"{header}\n\n"
@@ -370,7 +331,8 @@ def _format_message(project_data: dict) -> str:
         f"🛠 **Action:** {action}\n"
         f"💰 **VC Score:** {score}/10\n"
         f"👥 **Investors:** {investors_list}"
-        f"{source_line}\n\n"
+        f"{source_line}"
+        f"{tag_line}\n\n"
         "🔗 *Check source for details.*"
     )
 
@@ -385,14 +347,13 @@ async def send_telegram_test_message() -> None:
         "source": "local-test",
         "immediate_token": False,
         "force_send": True,
+        "frequency": "daily_scan"
     }
     await process_and_notify(payload)
 
 
 async def process_and_notify(project_data: dict) -> None:
-    """Send a Telegram alert for unseen and valuable/immediate opportunities."""
-async def process_and_notify(project_data: dict) -> None:
-    """Send a Telegram alert only for unseen projects with score >= 8."""
+    """Send a Telegram alert only for unseen projects with score >= 8 or immediate token."""
     name = str(project_data.get("project", "")).strip()
     if not name:
         return
@@ -404,72 +365,34 @@ async def process_and_notify(project_data: dict) -> None:
     if _project_exists(name) and not force_send:
         return
 
+    # Filter by value
     if score < 8 and not immediate and not force_send:
+        _insert_project(project_data) # Still save it even if no alert
         return
 
     message = _format_message(project_data)
-    if _project_exists(name):
-        return
-
-    if score < 8:
-        return
-
-    action = str(project_data.get("action", "")).strip() or "N/A"
-    investors = project_data.get("investors", [])
-    investors_list = ", ".join(str(i) for i in investors) if investors else "None"
-
-    message = (
-        "🚀 **NEW ALPHA DETECTED** 🚀\n\n"
-        f"🔹 **Project:** {name}\n"
-        f"🛠 **Action:** {action}\n"
-        f"💰 **VC Score:** {score}/10\n"
-        f"👥 **Investors:** {investors_list}\n\n"
-        "🔗 *Check source for details.*"
-    )
 
     if _telegram_preview_only():
         print("[WARN] TELEGRAM_PREVIEW_ONLY enabled. Preview only (no message sent):")
         print(message)
         _insert_project(project_data)
-        _insert_project(name, score)
+        return
+
+    bot, chat_id = _get_bot_and_chat_id()
+    if bot is None or chat_id is None:
+        print("[WARN] TELEGRAM_BOT_TOKEN/CHAT_ID not set. Preview only (no message sent):")
+        print(message)
+        _insert_project(project_data)
         return
 
     try:
-        bot, chat_id = _get_bot_and_chat_id()
-        if bot is None or chat_id is None:
-            print("[WARN] TELEGRAM_BOT_TOKEN/CHAT_ID not set. Preview only (no message sent):")
-            print(message)
-            _insert_project(project_data)
-            _insert_project(name, score)
-            return
-
         await _safe_send_message(bot, chat_id, message)
         await _safe_close_bot(bot)
-    except BaseException as exc:
+    except Exception as exc:
         print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
         print(message)
 
     _insert_project(project_data)
-
-
-def _load_mock_data() -> list[dict]:
-        try:
-            await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-        except Exception as exc:
-            print(f"[WARN] Telegram send failed ({exc}). Falling back to preview mode:")
-            print(message)
-        finally:
-            await bot.session.close()
-    except Exception as exc:
-        print(f"[WARN] Telegram subsystem failure ({exc}). Falling back to preview mode:")
-        print(message)
-    bot, chat_id = _get_bot_and_chat_id()
-    try:
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-    finally:
-        await bot.session.close()
-
-    _insert_project(name, score)
 
 
 def _load_mock_data() -> list[dict]:
@@ -481,14 +404,8 @@ def _load_mock_data() -> list[dict]:
             "investors": ["Paradigm", "Coinbase Ventures"],
             "score": 18,
             "source": "https://nitter.net/Monad_xyz",
-        },
-        {
-            "project": "Monad",
-            "action": "Join Testnet",
-            "investors": ["Paradigm"],
-            "score": 18,
-            "source": "https://nitter.net/Monad_xyz",
-        },
+            "frequency": "daily_scan"
+        }
     ]
 
 
@@ -502,6 +419,7 @@ def _parse_args() -> argparse.Namespace:
 async def main() -> None:
     args = _parse_args()
     init_db()
+    seed_initial_projects()
 
     if args.preview_only:
         os.environ["TELEGRAM_PREVIEW_ONLY"] = "1"
@@ -510,24 +428,15 @@ async def main() -> None:
     if args.telegram_test or env_test:
         try:
             await send_telegram_test_message()
-        except BaseException as exc:
+        except Exception as exc:
             print(f"[WARN] Telegram test flow failed safely: {exc}")
         return
 
     for project_data in _load_mock_data():
         try:
             await process_and_notify(project_data)
-        except BaseException as exc:
+        except Exception as exc:
             print(f"[WARN] Processing failed safely for mock data: {exc}")
-async def main() -> None:
-    init_db()
-
-    if os.getenv("TELEGRAM_SEND_TEST", "").strip().lower() in {"1", "true", "yes", "on"}:
-        await send_telegram_test_message()
-        return
-
-    for project_data in _load_mock_data():
-        await process_and_notify(project_data)
 
 
 if __name__ == "__main__":

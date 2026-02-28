@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -37,11 +38,11 @@ def _safe_decode_investors(raw: object) -> str:
 
 
 def _safe_project_slug(name: str) -> str:
-    return name.replace(" ", "-")
+    return name.replace(" ", "-").lower()
 
 
-def get_all_projects() -> list[dict]:
-    """Fetch all seen projects sorted by timestamp descending."""
+def get_all_projects(filter_time: str | None = None, filter_freq: str | None = None) -> list[dict]:
+    """Fetch projects with optional filtering."""
     if not Path(DB_PATH).exists():
         return []
 
@@ -55,14 +56,39 @@ def get_all_projects() -> list[dict]:
         query += ", action" if "action" in columns else ", NULL AS action"
         query += ", investors" if "investors" in columns else ", NULL AS investors"
         query += ", source" if "source" in columns else ", NULL AS source"
-        query += " FROM seen_projects ORDER BY timestamp DESC"
+        query += ", frequency" if "frequency" in columns else ", NULL AS frequency"
+        query += " FROM seen_projects"
+        
+        where_clauses = []
+        params = []
+        
+        if filter_time == "today":
+            today = datetime.now().strftime("%Y-%m-%d")
+            where_clauses.append("timestamp LIKE ?")
+            params.append(f"{today}%")
+        elif filter_time == "week":
+            week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+            where_clauses.append("timestamp >= ?")
+            params.append(week_ago)
+            
+        if filter_freq:
+            where_clauses.append("frequency = ?")
+            params.append(filter_freq)
+            
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+            
+        query += " ORDER BY timestamp DESC"
 
-        rows = conn.execute(query).fetchall()
+        rows = conn.execute(query, params).fetchall()
 
     projects = []
     for row in rows:
         score = int(row["last_score"] or 0)
         project_name = row["project_name"]
+        freq = row["frequency"] or ""
+        tag = freq.replace("_scan", "").replace("_research", "").replace("_alpha", "").upper()
+        
         projects.append(
             {
                 "project_name": project_name,
@@ -71,13 +97,9 @@ def get_all_projects() -> list[dict]:
                 "vc_score": score,
                 "investors": _safe_decode_investors(row["investors"]),
                 "source": row["source"] or "N/A",
-        projects.append(
-            {
-                "project_name": row["project_name"],
-                "action": row["action"] or "N/A",
-                "vc_score": score,
-                "investors": _safe_decode_investors(row["investors"]),
                 "discovery_date": row["timestamp"] or "N/A",
+                "frequency": freq,
+                "tag": tag,
                 "score_class": "score-high" if score >= 18 else "score-medium" if score >= 8 else "score-low",
             }
         )
@@ -85,22 +107,22 @@ def get_all_projects() -> list[dict]:
     return projects
 
 
-def get_project(project_slug: str) -> dict | None:
-    for project in get_all_projects():
-        if project["project_slug"] == project_slug:
-            return project
-    return None
-
-
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    projects = get_all_projects()
-    return templates.TemplateResponse("index.html", {"request": request, "projects": projects})
+async def dashboard(request: Request, t: str | None = None, f: str | None = None):
+    projects = get_all_projects(filter_time=t, filter_freq=f)
+    return templates.TemplateResponse("index.html", {
+        "request": request, 
+        "projects": projects,
+        "current_t": t,
+        "current_f": f
+    })
 
 
 @app.get("/project/{project_slug}", response_class=HTMLResponse)
 async def project_preview(request: Request, project_slug: str):
-    project = get_project(project_slug)
+    # This is a bit inefficient but fine for a prototype
+    projects = get_all_projects()
+    project = next((p for p in projects if p["project_slug"] == project_slug), None)
     return templates.TemplateResponse(
         "project_preview.html",
         {"request": request, "project": project, "project_slug": project_slug},

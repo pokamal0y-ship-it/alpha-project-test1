@@ -20,9 +20,6 @@
     }
 
     * { box-sizing: border-box; }
-    }
-
-    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -32,11 +29,17 @@
       min-height: 100vh;
       padding: 28px;
     }
-    .container { max-width: 1200px; margin: 0 auto; }
 
     .container {
       max-width: 1200px;
       margin: 0 auto;
+    }
+
+    .header-flex {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
     }
 
     .title {
@@ -45,15 +48,44 @@
       color: var(--accent);
       text-shadow: 0 0 14px rgba(39, 216, 255, 0.45);
     }
-    .subtitle { margin: 0 0 20px; color: var(--muted); font-size: 0.95rem; }
-      letter-spacing: 0.5px;
-      text-shadow: 0 0 14px rgba(39, 216, 255, 0.45);
-    }
 
     .subtitle {
-      margin: 0 0 20px;
+      margin: 0;
       color: var(--muted);
       font-size: 0.95rem;
+    }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .filter-group label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .filter-group select {
+      background: transparent;
+      border: none;
+      color: var(--accent);
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
     }
 
     .panel {
@@ -65,12 +97,11 @@
     }
 
     .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 960px; }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 860px;
+      min-width: 900px;
     }
 
     thead th {
@@ -88,7 +119,7 @@
       padding: 12px 16px;
       border-bottom: 1px solid rgba(40, 48, 70, 0.55);
       font-size: 0.92rem;
-      vertical-align: top;
+      vertical-align: middle;
     }
 
     tbody tr:hover { background: rgba(39, 216, 255, 0.06); }
@@ -98,10 +129,11 @@
       padding: 4px 10px;
       border-radius: 999px;
       font-weight: 700;
-      border: 1px solid transparent;
-    }
+      font-size: 0.82rem;
       letter-spacing: 0.2px;
       border: 1px solid transparent;
+      text-align: center;
+      min-width: 40px;
     }
 
     .score-high {
@@ -110,13 +142,35 @@
       box-shadow: 0 0 14px rgba(0, 255, 157, 0.55);
       border-color: rgba(0, 255, 157, 0.7);
     }
-    .score-medium { color: #352900; background: var(--yellow); border-color: rgba(255, 216, 77, 0.7); }
-    .score-low { color: #dee2ef; background: var(--dim); border-color: rgba(111, 118, 137, 0.8); }
+
+    .score-medium {
+      color: #352900;
+      background: var(--yellow);
+      border-color: rgba(255, 216, 77, 0.7);
+    }
+
+    .score-low {
+      color: #dee2ef;
+      background: var(--dim);
+      border-color: rgba(111, 118, 137, 0.8);
+    }
+
+    .tag-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(39, 216, 255, 0.15);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid rgba(39, 216, 255, 0.3);
+    }
 
     .project-cell { position: relative; }
     .project-link {
       color: #8de8ff;
       text-decoration: none;
+      font-weight: 600;
       border-bottom: 1px dashed rgba(141, 232, 255, 0.5);
     }
     .project-link:hover { color: #c5f4ff; }
@@ -136,65 +190,68 @@
       display: none;
     }
     .project-cell:hover .hover-preview { display: block; }
-    .hover-preview p { margin: 0 0 8px; color: var(--muted); font-size: 0.84rem; }
+    .hover-preview p { margin: 0 0 8px; color: var(--muted); font-size: 0.84rem; line-height: 1.4; }
     .hover-preview .open-btn {
       display: inline-block;
       margin-top: 4px;
       font-size: 0.82rem;
-      padding: 5px 10px;
+      padding: 5px 12px;
       border-radius: 999px;
       border: 1px solid rgba(39, 216, 255, 0.5);
       color: var(--accent);
       text-decoration: none;
+      transition: all 0.2s;
     }
+    .hover-preview .open-btn:hover { background: rgba(39, 216, 255, 0.1); }
 
     .empty { padding: 36px 18px; color: var(--muted); text-align: center; font-size: 0.95rem; }
-    @media (max-width: 760px) {
-      body { padding: 16px; }
-      tbody td, thead th { padding: 10px 12px; }
-      .hover-preview { position: static; width: auto; margin-top: 8px; }
-      .project-cell:hover .hover-preview { display: block; }
-
-    .score-medium {
-      color: #352900;
-      background: var(--yellow);
-      border-color: rgba(255, 216, 77, 0.7);
-    }
-
-    .score-low {
-      color: #dee2ef;
-      background: var(--dim);
-      border-color: rgba(111, 118, 137, 0.8);
-    }
-
-    .empty {
-      padding: 36px 18px;
-      color: var(--muted);
-      text-align: center;
-      font-size: 0.95rem;
-    }
 
     @media (max-width: 760px) {
       body { padding: 16px; }
-      .subtitle { font-size: 0.88rem; }
+      .header-flex { flex-direction: column; gap: 16px; }
       tbody td, thead th { padding: 10px 12px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1 class="title">Crypto Alpha Hunter</h1>
-    <p class="subtitle">Live opportunity board · auto-refresh every 10 minutes</p>
+    <div class="header-flex">
+      <div>
+        <h1 class="title">Crypto Alpha Hunter</h1>
+        <p class="subtitle">Live opportunity board · auto-refresh every 10 minutes</p>
+      </div>
+      <div class="filters">
+        <div class="filter-group">
+          <label>Time:</label>
+          <select id="timeFilter" onchange="applyFilters()">
+            <option value="" {% if not current_t %}selected{% endif %}>All Time</option>
+            <option value="today" {% if current_t == 'today' %}selected{% endif %}>Today</option>
+            <option value="week" {% if current_t == 'week' %}selected{% endif %}>This Week</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Source:</label>
+          <select id="freqFilter" onchange="applyFilters()">
+            <option value="" {% if not current_f %}selected{% endif %}>All Sources</option>
+            <option value="daily_scan" {% if current_f == 'daily_scan' %}selected{% endif %}>Daily (X/TG)</option>
+            <option value="mid_term_scan" {% if current_f == 'mid_term_scan' %}selected{% endif %}>Mid-Term (DefiLlama)</option>
+            <option value="weekly_research" {% if current_f == 'weekly_research' %}selected{% endif %}>Weekly (Substack)</option>
+            <option value="monthly_alpha" {% if current_f == 'monthly_alpha' %}selected{% endif %}>Monthly (CryptoRank)</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
     <div class="panel">
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Project Name</th>
+              <th>Project</th>
               <th>Action</th>
               <th>VC Score</th>
               <th>Investors</th>
+              <th>Tag</th>
               <th>Discovery Date</th>
             </tr>
           </thead>
@@ -208,19 +265,19 @@
                       <p><strong>Action:</strong> {{ item.action }}</p>
                       <p><strong>Investors:</strong> {{ item.investors }}</p>
                       <p><strong>Source:</strong> {{ item.source }}</p>
-                      <a class="open-btn" href="/project/{{ item.project_slug }}">Open preview page</a>
+                      <a class="open-btn" href="/project/{{ item.project_slug }}">Full Details</a>
                     </div>
                   </td>
-                  <td>{{ item.project_name }}</td>
-                  <td>{{ item.action }}</td>
+                  <td style="max-width: 300px;">{{ item.action }}</td>
                   <td><span class="score-pill {{ item.score_class }}">{{ item.vc_score }}</span></td>
                   <td>{{ item.investors }}</td>
-                  <td>{{ item.discovery_date }}</td>
+                  <td><span class="tag-pill">#{{ item.tag }}</span></td>
+                  <td style="color: var(--muted); font-size: 0.85rem;">{{ item.discovery_date }}</td>
                 </tr>
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="5" class="empty">No projects found yet in <code>seen_projects</code>.</td>
+                <td colspan="6" class="empty">No projects found matching the current filters.</td>
               </tr>
             {% endif %}
           </tbody>
@@ -228,5 +285,16 @@
       </div>
     </div>
   </div>
+
+  <script>
+    function applyFilters() {
+      const t = document.getElementById('timeFilter').value;
+      const f = document.getElementById('freqFilter').value;
+      let url = '/?';
+      if (t) url += 't=' + t + '&';
+      if (f) url += 'f=' + f + '&';
+      window.location.href = url;
+    }
+  </script>
 </body>
 </html>
