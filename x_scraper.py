@@ -42,14 +42,31 @@ IMMEDIATE_TOKEN_KEYWORDS = [
 ]
 
 
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+]
+
+
 def _parse_rss(url: str):
     import feedparser
     import urllib.request
     import re
+    import random
 
     try:
-        # Fetch content manually to allow cleaning
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (AlphaHunter/1.0)"})
+        # Fetch content with a random User-Agent
+        req = urllib.request.Request(
+            url, 
+            headers={
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "application/rss+xml, application/xml;q=0.9, */*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            }
+        )
         with urllib.request.urlopen(req, timeout=15) as response:
             raw_data = response.read()
             
@@ -59,10 +76,21 @@ def _parse_rss(url: str):
             except UnicodeDecodeError:
                 text = raw_data.decode("latin-1", errors="replace")
 
-            # Cleaning step: Remove invalid XML control characters
-            # This regex removes most non-printable characters that break XML parsers,
-            # but keeps common whitespace (tab, newline, carriage return).
+            # Aggressive Cleaning: 
+            # 1. Remove common invalid XML control characters
             cleaned_text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
+            
+            # 2. Fix potentially broken Nitter RSS (e.g., & inside attributes)
+            # Replace & only if it's not part of an existing entity
+            cleaned_text = re.sub(r"&(?!([a-zA-Z0-9]+|#[0-9]+|#x[0-9a-fA-F]+);)", "&amp;", cleaned_text)
+            
+            # 3. Strip any trailing garbage that might cause "mismatched tag" or "invalid token"
+            cleaned_text = cleaned_text.strip()
+            if not cleaned_text.endswith(">"):
+                # Try to find the last closing tag
+                last_tag_idx = cleaned_text.rfind(">")
+                if last_tag_idx != -1:
+                    cleaned_text = cleaned_text[:last_tag_idx + 1]
             
             return feedparser.parse(cleaned_text)
     except Exception as e:
