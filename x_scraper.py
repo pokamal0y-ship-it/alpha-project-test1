@@ -99,7 +99,7 @@ def _parse_rss(url: str):
         return feedparser.parse(url)
 
 
-def _is_immediate_token_opportunity(text: str) -> bool:
+def is_immediate_token_opportunity(text: str) -> bool:
     normalized = (text or "").lower()
     return any(keyword in normalized for keyword in IMMEDIATE_TOKEN_KEYWORDS)
 
@@ -144,7 +144,7 @@ async def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
                         "published": getattr(entry, "published", ""),
                         "source_instance": instance,
                         "source_type": "x",
-                        "immediate_hint": _is_immediate_token_opportunity(title),
+                        "immediate_hint": is_immediate_token_opportunity(title),
                     }
                 )
             return tweets
@@ -177,7 +177,7 @@ def fetch_site_feed_items(feed_url: str) -> list[dict[str, Any]]:
                 "published": getattr(entry, "published", ""),
                 "source_instance": feed_url,
                 "source_type": "site",
-                "immediate_hint": _is_immediate_token_opportunity(text_blob),
+                "immediate_hint": is_immediate_token_opportunity(text_blob),
             }
         )
     return items
@@ -195,7 +195,7 @@ async def _process_item(item: dict[str, Any], account_label: str) -> None:
         print(f"[WARN] Analysis failed for {account_label} item {item.get('link', '')}: {exc}")
         return
 
-    immediate = bool(item.get("immediate_hint")) or _is_immediate_token_opportunity(extracted.get("action", ""))
+    immediate = bool(item.get("immediate_hint")) or is_immediate_token_opportunity(extracted.get("action", ""))
 
     if "HIGH PRIORITY" not in priority and not immediate:
         return
