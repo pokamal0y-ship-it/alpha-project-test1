@@ -56,7 +56,7 @@ async def fetch_x_and_telegram():
     all_items = []
     for account in TARGET_ACCOUNTS:
         try:
-            all_items.extend(fetch_latest_tweets(account))
+            all_items.extend(await fetch_latest_tweets(account))
         except Exception as e:
             logger.warning(f"Failed to fetch tweets for {account}: {e}")
             
