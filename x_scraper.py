@@ -22,12 +22,10 @@ SITE_FEEDS = [
 ]
 
 NITTER_INSTANCES = [
-    "https://nitter.poast.org",
-    "https://xcancel.com",
-    "https://nitter.privacydev.com",
-    "https://nitter.projectsegfau.lt",
-    "https://nitter.rawbit.ninja",
-    "https://nitter.cz",
+    "https://nitter.pussthecat.org",
+    "https://nitter.nixnet.services",
+    "https://nitter.fdn.fr",
+    "https://nitter.1d4.us",
 ]
 
 IMMEDIATE_TOKEN_KEYWORDS = [
@@ -56,6 +54,7 @@ def _parse_rss(url: str):
     import urllib.request
     import re
     import random
+    from bs4 import BeautifulSoup
 
     try:
         # Fetch content with a random User-Agent
@@ -92,7 +91,9 @@ def _parse_rss(url: str):
                 if last_tag_idx != -1:
                     cleaned_text = cleaned_text[:last_tag_idx + 1]
             
-            return feedparser.parse(cleaned_text)
+            # Use BeautifulSoup with lxml to fix potentially malformed XML/RSS
+            soup = BeautifulSoup(cleaned_text, "lxml-xml")
+            return feedparser.parse(str(soup))
     except Exception as e:
         # Fallback to direct parsing if manual fetch fails
         return feedparser.parse(url)
@@ -103,7 +104,7 @@ def _is_immediate_token_opportunity(text: str) -> bool:
     return any(keyword in normalized for keyword in IMMEDIATE_TOKEN_KEYWORDS)
 
 
-def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
+async def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
     """Fetch and normalize the latest 5 tweets from available Nitter RSS feeds with robust rotation."""
     import random
     
@@ -113,7 +114,9 @@ def fetch_latest_tweets(account: str) -> list[dict[str, Any]]:
     
     errors: list[str] = []
 
-    for instance in instances:
+    for idx, instance in enumerate(instances):
+        if idx > 0:
+            await asyncio.sleep(5)
         rss_url = f"{instance}/{account}/rss"
         try:
             feed = _parse_rss(rss_url)
@@ -221,7 +224,7 @@ async def scouring_engine() -> None:
         print("[INFO] Starting scraping cycle...")
         for account in TARGET_ACCOUNTS:
             try:
-                tweets = fetch_latest_tweets(account)
+                tweets = await fetch_latest_tweets(account)
                 for tweet in tweets:
                     await _process_item(tweet, f"@{account}")
             except Exception as exc:
