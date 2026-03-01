@@ -13,11 +13,63 @@ from apscheduler.triggers.interval import IntervalTrigger
 load_dotenv()
 
 from alpha_aggregator import analyze_alpha_post, calculate_score, process_and_notify, init_db, seed_initial_projects
-from x_scraper import fetch_latest_tweets, fetch_site_feed_items, TARGET_ACCOUNTS, SITE_FEEDS
+from x_scraper import fetch_site_feed_items, TARGET_ACCOUNTS, SITE_FEEDS, is_immediate_token_opportunity
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AlphaScheduler")
+
+async def fetch_tweets(usernames: list[str]) -> list[dict]:
+    """Fetch latest 5 tweets for each username using Twikit with basic error handling."""
+    try:
+        from twikit import Client
+    except ImportError:
+        logger.error("The 'twikit' library is not installed. Please run 'pip install twikit'.")
+        return []
+
+    client = Client('en-US')
+    
+    # Credentials from environment variables
+    tw_user = os.getenv("TWITTER_USERNAME")
+    tw_email = os.getenv("TWITTER_EMAIL")
+    tw_pass = os.getenv("TWITTER_PASSWORD")
+    
+    if not all([tw_user, tw_email, tw_pass]):
+        logger.error("Twitter credentials (TWITTER_USERNAME, TWITTER_EMAIL, TWITTER_PASSWORD) missing in .env")
+        return []
+
+    try:
+        await client.login(
+            auth_info_1=tw_user,
+            auth_info_2=tw_email,
+            password=tw_pass
+        )
+        logger.info("Successfully logged into Twitter via Twikit.")
+    except Exception as e:
+        logger.error(f"Twikit login failed: {e}")
+        return []
+
+    all_tweets = []
+    for username in usernames:
+        try:
+            user = await client.get_user_by_screen_name(username)
+            tweets = await user.get_tweets('Tweets', count=5)
+            
+            for tweet in tweets:
+                all_tweets.append({
+                    "link": f"https://x.com/{username}/status/{tweet.id}",
+                    "title": tweet.text,
+                    "published": tweet.created_at,
+                    "source_instance": "twitter.com",
+                    "source_type": "x",
+                    "immediate_hint": is_immediate_token_opportunity(tweet.text),
+                })
+            # Respectful delay between accounts
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.warning(f"Failed to fetch tweets for {username} via Twikit: {e}")
+            
+    return all_tweets
 
 async def run_scan(source_name: str, items_fetcher, frequency_tag: str):
     """Generic scan runner with error handling and retries."""
@@ -54,12 +106,15 @@ async def run_scan(source_name: str, items_fetcher, frequency_tag: str):
 
 async def fetch_x_and_telegram():
     all_items = []
-    for account in TARGET_ACCOUNTS:
-        try:
-            all_items.extend(await fetch_latest_tweets(account))
-        except Exception as e:
-            logger.warning(f"Failed to fetch tweets for {account}: {e}")
+    
+    # Fetch tweets using Twikit
+    logger.info("Fetching tweets for target accounts via Twikit...")
+    try:
+        all_items.extend(await fetch_tweets(TARGET_ACCOUNTS))
+    except Exception as e:
+        logger.error(f"Critical failure in Twikit fetch: {e}")
             
+    # Fetch site feeds as before
     for feed_url in SITE_FEEDS:
         try:
             all_items.extend(fetch_site_feed_items(feed_url))
